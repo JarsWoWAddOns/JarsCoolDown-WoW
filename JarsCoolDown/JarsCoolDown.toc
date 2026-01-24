@@ -1,0 +1,8 @@
+## Interface: 120000
+## Title: Jar's Cooldowns
+## Notes: Simple cooldown tracker
+## Author: Jar
+## Version: 1.0
+## SavedVariables: JarsCoolDownDB
+
+JarsCoolDown.lua
