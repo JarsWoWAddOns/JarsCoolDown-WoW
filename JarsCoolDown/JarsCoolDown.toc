@@ -1,8 +1,8 @@
 ## Interface: 120000
 ## Title: Jar's Cooldowns
-## Notes: Simple cooldown tracker
+## Notes: Simple cooldown tracker with per-spec profiles
 ## Author: Jar
-## Version: 1.0
-## SavedVariables: JarsCoolDownDB
+## Version: 1.1
+## SavedVariablesPerCharacter: JarsCoolDownDB
 
 JarsCoolDown.lua

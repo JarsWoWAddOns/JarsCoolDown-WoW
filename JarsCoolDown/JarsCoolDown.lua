@@ -3,23 +3,71 @@ local icons = {}
 local currentStacks = {}
 local chargeCooldowns = {}
 local iconContainer
+local currentSpec = 1
 
-JarsCoolDownDB = JarsCoolDownDB or {
-    spells = {
-        {spellID = 0, cooldown = 0, stacks = 0, resetID = 0, alwaysShow = false, haste = false},
-        {spellID = 0, cooldown = 0, stacks = 0, resetID = 0, alwaysShow = false, haste = false},
-        {spellID = 0, cooldown = 0, stacks = 0, resetID = 0, alwaysShow = false, haste = false},
-        {spellID = 0, cooldown = 0, stacks = 0, resetID = 0, alwaysShow = false, haste = false},
-        {spellID = 0, cooldown = 0, stacks = 0, resetID = 0, alwaysShow = false, haste = false},
-        {spellID = 0, cooldown = 0, stacks = 0, resetID = 0, alwaysShow = false, haste = false}
-    },
-    iconSize = 64,
-    bgOpacity = 0.8,
-    locked = true,
-    position = nil
-}
+-- Per-character, per-spec saved variables
+JarsCoolDownDB = JarsCoolDownDB or {}
+
+-- Get current profile based on spec
+local function GetCurrentProfile()
+    local specIndex = GetSpecialization() or 1
+    currentSpec = specIndex
+    
+    -- Initialize spec profile if it doesn't exist
+    if not JarsCoolDownDB[specIndex] then
+        JarsCoolDownDB[specIndex] = {
+            spells = {
+                {spellID = 0, cooldown = 0, stacks = 0, resetID = 0, alwaysShow = false, haste = false},
+                {spellID = 0, cooldown = 0, stacks = 0, resetID = 0, alwaysShow = false, haste = false},
+                {spellID = 0, cooldown = 0, stacks = 0, resetID = 0, alwaysShow = false, haste = false},
+                {spellID = 0, cooldown = 0, stacks = 0, resetID = 0, alwaysShow = false, haste = false},
+                {spellID = 0, cooldown = 0, stacks = 0, resetID = 0, alwaysShow = false, haste = false},
+                {spellID = 0, cooldown = 0, stacks = 0, resetID = 0, alwaysShow = false, haste = false}
+            },
+            iconSize = 64,
+            bgOpacity = 0.8,
+            locked = true,
+            position = nil
+        }
+    end
+    
+    return JarsCoolDownDB[specIndex]
+end
+
+-- Reload icons when spec changes
+local function ReloadIcons()
+    -- Clear existing icons
+    if iconContainer then
+        iconContainer:Hide()
+        for i = 1, 6 do
+            if icons[i] then
+                icons[i]:Hide()
+                icons[i]:SetParent(nil)
+            end
+        end
+        iconContainer:SetParent(nil)
+        iconContainer = nil
+    end
+    
+    -- Reset state
+    icons = {}
+    currentStacks = {}
+    chargeCooldowns = {}
+    
+    -- Trigger recreation on next frame
+    C_Timer.After(0.1, function()
+        local event = CreateFrame("Frame")
+        event:RegisterEvent("PLAYER_ENTERING_WORLD")
+        event:SetScript("OnEvent", function(self, e)
+            self:UnregisterEvent("PLAYER_ENTERING_WORLD")
+            -- Icons will be recreated by main event handler
+        end)
+    end)
+end
 
 local function CreateConfigWindow()
+    local profile = GetCurrentProfile()
+    
     configFrame = CreateFrame("Frame", "JarsCoolDownConfig", UIParent, "BasicFrameTemplateWithInset")
     configFrame:SetSize(660, 400)
     configFrame:SetPoint("CENTER")
@@ -30,7 +78,10 @@ local function CreateConfigWindow()
     configFrame:SetScript("OnDragStop", configFrame.StopMovingOrSizing)
     configFrame.title = configFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     configFrame.title:SetPoint("LEFT", configFrame.TitleBg, "LEFT", 5, 0)
-    configFrame.title:SetText("Jar's Cooldowns Config")
+    
+    -- Update title to show current spec
+    local specID, specName = GetSpecializationInfo(GetSpecialization() or 1)
+    configFrame.title:SetText("Jar's Cooldowns Config - " .. (specName or "Unknown"))
     configFrame:Hide()
     
     -- Column headers
@@ -74,7 +125,7 @@ local function CreateConfigWindow()
         spellIDBox:SetSize(80, 25)
         spellIDBox:SetPoint("TOPLEFT", 20, yPos)
         spellIDBox:SetAutoFocus(false)
-        spellIDBox:SetText(tostring(JarsCoolDownDB.spells[index].spellID))
+        spellIDBox:SetText(tostring(profile.spells[index].spellID))
         spellIDBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
         
         -- Spell icon display next to spellID box
@@ -83,19 +134,19 @@ local function CreateConfigWindow()
         spellIcon:SetPoint("LEFT", spellIDBox, "RIGHT", 5, 0)
         spellIcon.texture = spellIcon:CreateTexture(nil, "ARTWORK")
         spellIcon.texture:SetAllPoints()
-        local iconTexture = C_Spell.GetSpellTexture(JarsCoolDownDB.spells[index].spellID)
-        if iconTexture and JarsCoolDownDB.spells[index].spellID > 0 then
+        local iconTexture = C_Spell.GetSpellTexture(profile.spells[index].spellID)
+        if iconTexture and profile.spells[index].spellID > 0 then
             spellIcon.texture:SetTexture(iconTexture)
         else
             spellIcon.texture:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
         end
         
         spellIDBox:SetScript("OnEnterPressed", function(self) 
-            JarsCoolDownDB.spells[index].spellID = tonumber(self:GetText()) or 0
+            profile.spells[index].spellID = tonumber(self:GetText()) or 0
             
             -- Update config icon
-            local texture = C_Spell.GetSpellTexture(JarsCoolDownDB.spells[index].spellID)
-            if texture and JarsCoolDownDB.spells[index].spellID > 0 then
+            local texture = C_Spell.GetSpellTexture(profile.spells[index].spellID)
+            if texture and profile.spells[index].spellID > 0 then
                 spellIcon.texture:SetTexture(texture)
             else
                 spellIcon.texture:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
@@ -117,10 +168,10 @@ local function CreateConfigWindow()
         cooldownBox:SetSize(70, 25)
         cooldownBox:SetPoint("TOPLEFT", 130, yPos)
         cooldownBox:SetAutoFocus(false)
-        cooldownBox:SetText(tostring(JarsCoolDownDB.spells[index].cooldown))
+        cooldownBox:SetText(tostring(profile.spells[index].cooldown))
         cooldownBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
         cooldownBox:SetScript("OnEnterPressed", function(self)
-            JarsCoolDownDB.spells[index].cooldown = tonumber(self:GetText()) or 0
+            profile.spells[index].cooldown = tonumber(self:GetText()) or 0
             self:ClearFocus()
         end)
         inputBoxes[index].cooldownBox = cooldownBox
@@ -130,10 +181,10 @@ local function CreateConfigWindow()
         stacksBox:SetSize(60, 25)
         stacksBox:SetPoint("TOPLEFT", 220, yPos)
         stacksBox:SetAutoFocus(false)
-        stacksBox:SetText(tostring(JarsCoolDownDB.spells[index].stacks))
+        stacksBox:SetText(tostring(profile.spells[index].stacks))
         stacksBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
         stacksBox:SetScript("OnEnterPressed", function(self)
-            JarsCoolDownDB.spells[index].stacks = tonumber(self:GetText()) or 0
+            profile.spells[index].stacks = tonumber(self:GetText()) or 0
             self:ClearFocus()
         end)
         inputBoxes[index].stacksBox = stacksBox
@@ -143,7 +194,7 @@ local function CreateConfigWindow()
         resetBox:SetSize(80, 25)
         resetBox:SetPoint("TOPLEFT", 300, yPos)
         resetBox:SetAutoFocus(false)
-        resetBox:SetText(tostring(JarsCoolDownDB.spells[index].resetID))
+        resetBox:SetText(tostring(profile.spells[index].resetID))
         resetBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
         
         -- Reset icon display next to resetID box
@@ -152,19 +203,19 @@ local function CreateConfigWindow()
         resetIcon:SetPoint("LEFT", resetBox, "RIGHT", 5, 0)
         resetIcon.texture = resetIcon:CreateTexture(nil, "ARTWORK")
         resetIcon.texture:SetAllPoints()
-        local iconTexture = C_Spell.GetSpellTexture(JarsCoolDownDB.spells[index].resetID)
-        if iconTexture and JarsCoolDownDB.spells[index].resetID > 0 then
+        local iconTexture = C_Spell.GetSpellTexture(profile.spells[index].resetID)
+        if iconTexture and profile.spells[index].resetID > 0 then
             resetIcon.texture:SetTexture(iconTexture)
         else
             resetIcon.texture:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
         end
         
         resetBox:SetScript("OnEnterPressed", function(self)
-            JarsCoolDownDB.spells[index].resetID = tonumber(self:GetText()) or 0
+            profile.spells[index].resetID = tonumber(self:GetText()) or 0
             
             -- Update icon
-            local texture = C_Spell.GetSpellTexture(JarsCoolDownDB.spells[index].resetID)
-            if texture and JarsCoolDownDB.spells[index].resetID > 0 then
+            local texture = C_Spell.GetSpellTexture(profile.spells[index].resetID)
+            if texture and profile.spells[index].resetID > 0 then
                 resetIcon.texture:SetTexture(texture)
             else
                 resetIcon.texture:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
@@ -178,14 +229,14 @@ local function CreateConfigWindow()
         -- Always Show checkbox
         local alwaysCheck = CreateFrame("CheckButton", nil, configFrame, "UICheckButtonTemplate")
         alwaysCheck:SetPoint("TOPLEFT", 440, yPos)
-        alwaysCheck:SetChecked(JarsCoolDownDB.spells[index].alwaysShow)
+        alwaysCheck:SetChecked(profile.spells[index].alwaysShow)
         alwaysCheck:SetScript("OnClick", function(self)
-            JarsCoolDownDB.spells[index].alwaysShow = self:GetChecked()
+            profile.spells[index].alwaysShow = self:GetChecked()
             if icons[index] then
                 if currentStacks[index] and currentStacks[index] == 0 then
                     icons[index]:Show()
                 else
-                    if JarsCoolDownDB.spells[index].alwaysShow and JarsCoolDownDB.spells[index].spellID > 0 then
+                    if profile.spells[index].alwaysShow and profile.spells[index].spellID > 0 then
                         icons[index]:Show()
                     else
                         icons[index]:Hide()
@@ -198,9 +249,9 @@ local function CreateConfigWindow()
         -- Haste checkbox
         local hasteCheck = CreateFrame("CheckButton", nil, configFrame, "UICheckButtonTemplate")
         hasteCheck:SetPoint("TOPLEFT", 545, yPos)
-        hasteCheck:SetChecked(JarsCoolDownDB.spells[index].haste)
+        hasteCheck:SetChecked(profile.spells[index].haste)
         hasteCheck:SetScript("OnClick", function(self)
-            JarsCoolDownDB.spells[index].haste = self:GetChecked()
+            profile.spells[index].haste = self:GetChecked()
         end)
         inputBoxes[index].hasteCheck = hasteCheck
     end
@@ -212,16 +263,16 @@ local function CreateConfigWindow()
     saveButton:SetText("Save")
     saveButton:SetScript("OnClick", function()
         for i = 1, 6 do
-            JarsCoolDownDB.spells[i].spellID = tonumber(inputBoxes[i].spellIDBox:GetText()) or 0
-            JarsCoolDownDB.spells[i].cooldown = tonumber(inputBoxes[i].cooldownBox:GetText()) or 0
-            JarsCoolDownDB.spells[i].stacks = tonumber(inputBoxes[i].stacksBox:GetText()) or 0
-            JarsCoolDownDB.spells[i].resetID = tonumber(inputBoxes[i].resetBox:GetText()) or 0
-            JarsCoolDownDB.spells[i].alwaysShow = inputBoxes[i].alwaysCheck:GetChecked()
-            JarsCoolDownDB.spells[i].haste = inputBoxes[i].hasteCheck:GetChecked()
+            profile.spells[i].spellID = tonumber(inputBoxes[i].spellIDBox:GetText()) or 0
+            profile.spells[i].cooldown = tonumber(inputBoxes[i].cooldownBox:GetText()) or 0
+            profile.spells[i].stacks = tonumber(inputBoxes[i].stacksBox:GetText()) or 0
+            profile.spells[i].resetID = tonumber(inputBoxes[i].resetBox:GetText()) or 0
+            profile.spells[i].alwaysShow = inputBoxes[i].alwaysCheck:GetChecked()
+            profile.spells[i].haste = inputBoxes[i].hasteCheck:GetChecked()
             
             -- Reset current stacks to max
-            if JarsCoolDownDB.spells[i].stacks > 0 then
-                currentStacks[i] = JarsCoolDownDB.spells[i].stacks
+            if profile.spells[i].stacks > 0 then
+                currentStacks[i] = profile.spells[i].stacks
                 chargeCooldowns[i] = {}
             else
                 currentStacks[i] = 1
@@ -230,8 +281,8 @@ local function CreateConfigWindow()
             
             -- Update config window icons
             if inputBoxes[i].spellIcon then
-                local spellTexture = C_Spell.GetSpellTexture(JarsCoolDownDB.spells[i].spellID)
-                if spellTexture and JarsCoolDownDB.spells[i].spellID > 0 then
+                local spellTexture = C_Spell.GetSpellTexture(profile.spells[i].spellID)
+                if spellTexture and profile.spells[i].spellID > 0 then
                     inputBoxes[i].spellIcon.texture:SetTexture(spellTexture)
                 else
                     inputBoxes[i].spellIcon.texture:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
@@ -239,8 +290,8 @@ local function CreateConfigWindow()
             end
             
             if inputBoxes[i].resetIcon then
-                local resetTexture = C_Spell.GetSpellTexture(JarsCoolDownDB.spells[i].resetID)
-                if resetTexture and JarsCoolDownDB.spells[i].resetID > 0 then
+                local resetTexture = C_Spell.GetSpellTexture(profile.spells[i].resetID)
+                if resetTexture and profile.spells[i].resetID > 0 then
                     inputBoxes[i].resetIcon.texture:SetTexture(resetTexture)
                 else
                     inputBoxes[i].resetIcon.texture:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
@@ -249,13 +300,13 @@ local function CreateConfigWindow()
             
             -- Update icon texture if icon exists
             if icons[i] then
-                local texture = C_Spell.GetSpellTexture(JarsCoolDownDB.spells[i].spellID)
+                local texture = C_Spell.GetSpellTexture(profile.spells[i].spellID)
                 if texture then
                     icons[i].texture:SetTexture(texture)
                 end
                 
                 -- Update visibility based on Always Show
-                if JarsCoolDownDB.spells[i].alwaysShow and JarsCoolDownDB.spells[i].spellID > 0 then
+                if profile.spells[i].alwaysShow and profile.spells[i].spellID > 0 then
                     icons[i]:Show()
                 elseif currentStacks[i] == 0 then
                     icons[i]:Show()
@@ -271,13 +322,13 @@ local function CreateConfigWindow()
     local lockButton = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
     lockButton:SetSize(80, 25)
     lockButton:SetPoint("LEFT", saveButton, "RIGHT", 20, 0)
-    lockButton:SetText(JarsCoolDownDB.locked and "Unlock" or "Lock")
+    lockButton:SetText(profile.locked and "Unlock" or "Lock")
     lockButton:SetScript("OnClick", function(self)
-        JarsCoolDownDB.locked = not JarsCoolDownDB.locked
-        self:SetText(JarsCoolDownDB.locked and "Unlock" or "Lock")
+        profile.locked = not profile.locked
+        self:SetText(profile.locked and "Unlock" or "Lock")
         
         if iconContainer then
-            if JarsCoolDownDB.locked then
+            if profile.locked then
                 iconContainer:EnableMouse(false)
                 iconContainer:SetMovable(false)
                 iconContainer.background:SetColorTexture(0, 0, 0, 1)
@@ -295,7 +346,7 @@ local function CreateConfigWindow()
     resetPosButton:SetPoint("LEFT", lockButton, "RIGHT", 20, 0)
     resetPosButton:SetText("Reset Position")
     resetPosButton:SetScript("OnClick", function(self)
-        JarsCoolDownDB.position = nil
+        profile.position = nil
         if iconContainer then
             iconContainer:ClearAllPoints()
             iconContainer:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
@@ -307,14 +358,14 @@ local function CreateConfigWindow()
     local sizeSlider = CreateFrame("Slider", nil, configFrame, "OptionsSliderTemplate")
     sizeSlider:SetPoint("TOPLEFT", 20, -250)
     sizeSlider:SetMinMaxValues(20, 100)
-    sizeSlider:SetValue(JarsCoolDownDB.iconSize or 64)
+    sizeSlider:SetValue(profile.iconSize or 64)
     sizeSlider:SetValueStep(1)
     sizeSlider:SetObeyStepOnDrag(true)
     sizeSlider.tooltipText = "Icon size"
-    sizeSlider.Text:SetText("Icon Size: " .. (JarsCoolDownDB.iconSize or 64))
+    sizeSlider.Text:SetText("Icon Size: " .. (profile.iconSize or 64))
     sizeSlider:SetScript("OnValueChanged", function(self, value)
         local size = math.floor(value)
-        JarsCoolDownDB.iconSize = size
+        profile.iconSize = size
         self.Text:SetText("Icon Size: " .. size)
         
         -- Update icon sizes and positions if icons exist
@@ -352,13 +403,13 @@ local function CreateConfigWindow()
     local opacitySlider = CreateFrame("Slider", nil, configFrame, "OptionsSliderTemplate")
     opacitySlider:SetPoint("LEFT", sizeSlider, "RIGHT", 80, 0)
     opacitySlider:SetMinMaxValues(0, 1)
-    opacitySlider:SetValue(JarsCoolDownDB.bgOpacity or 0.8)
+    opacitySlider:SetValue(profile.bgOpacity or 0.8)
     opacitySlider:SetValueStep(0.01)
     opacitySlider:SetObeyStepOnDrag(true)
     opacitySlider.tooltipText = "Background opacity"
-    opacitySlider.Text:SetText("BG Opacity: " .. string.format("%.2f", JarsCoolDownDB.bgOpacity or 0.8))
+    opacitySlider.Text:SetText("BG Opacity: " .. string.format("%.2f", profile.bgOpacity or 0.8))
     opacitySlider:SetScript("OnValueChanged", function(self, value)
-        JarsCoolDownDB.bgOpacity = value
+        profile.bgOpacity = value
         self.Text:SetText("BG Opacity: " .. string.format("%.2f", value))
         
         -- Update background opacity if it exists
@@ -371,9 +422,19 @@ end
 -- Create icons and handle events
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
+f:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 f:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
 
 f:SetScript("OnEvent", function(self, event, unit, _, spellID)
+    if event == "PLAYER_SPECIALIZATION_CHANGED" then
+        -- Spec changed, reload icons with new profile
+        ReloadIcons()
+        print("JarsCoolDown: Switched to " .. (select(2, GetSpecializationInfo(GetSpecialization() or 1))) .. " profile")
+        return
+    end
+    
+    local profile = GetCurrentProfile()
+    
     if event == "PLAYER_ENTERING_WORLD" then
         if not configFrame then
             CreateConfigWindow()
@@ -381,7 +442,7 @@ f:SetScript("OnEvent", function(self, event, unit, _, spellID)
         
         if #icons == 0 then
             -- Get saved icon size
-            local size = JarsCoolDownDB.iconSize or 64
+            local size = profile.iconSize or 64
             local spacing = size + 2
             local containerWidth = (spacing * 3) - 2
             local containerHeight = (spacing * 2) - 2
@@ -392,19 +453,19 @@ f:SetScript("OnEvent", function(self, event, unit, _, spellID)
             iconContainer:SetSize(containerWidth, containerHeight)
             
             -- Restore saved position or center
-            if JarsCoolDownDB.position and JarsCoolDownDB.position.point and JarsCoolDownDB.position.relativePoint then
+            if profile.position and profile.position.point and profile.position.relativePoint then
                 local success = pcall(function()
                     iconContainer:SetPoint(
-                        JarsCoolDownDB.position.point,
+                        profile.position.point,
                         UIParent,
-                        JarsCoolDownDB.position.relativePoint,
-                        JarsCoolDownDB.position.x,
-                        JarsCoolDownDB.position.y
+                        profile.position.relativePoint,
+                        profile.position.x,
+                        profile.position.y
                     )
                 end)
                 if not success then
                     -- Invalid position, reset to center
-                    JarsCoolDownDB.position = nil
+                    profile.position = nil
                     iconContainer:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
                 end
             else
@@ -413,10 +474,10 @@ f:SetScript("OnEvent", function(self, event, unit, _, spellID)
             
             -- Make draggable
             iconContainer:SetMovable(true)
-            iconContainer:EnableMouse(not JarsCoolDownDB.locked)
+            iconContainer:EnableMouse(not profile.locked)
             iconContainer:RegisterForDrag("LeftButton")
             iconContainer:SetScript("OnDragStart", function(self)
-                if not JarsCoolDownDB.locked then
+                if not profile.locked then
                     self:StartMoving()
                 end
             end)
@@ -424,7 +485,7 @@ f:SetScript("OnEvent", function(self, event, unit, _, spellID)
                 self:StopMovingOrSizing()
                 -- Save position with anchor info
                 local point, _, relativePoint, x, y = self:GetPoint()
-                JarsCoolDownDB.position = {
+                profile.position = {
                     point = point,
                     relativePoint = relativePoint,
                     x = x,
@@ -436,7 +497,7 @@ f:SetScript("OnEvent", function(self, event, unit, _, spellID)
             iconContainer.background = iconContainer:CreateTexture(nil, "BACKGROUND")
             iconContainer.background:SetAllPoints()
             iconContainer.background:SetColorTexture(0, 0, 0, 1)
-            iconContainer.background:SetAlpha(JarsCoolDownDB.bgOpacity or 0.8)
+            iconContainer.background:SetAlpha(profile.bgOpacity or 0.8)
             
             -- Create 6 icons in 3x2 grid
             for i = 1, 6 do
@@ -460,8 +521,8 @@ f:SetScript("OnEvent", function(self, event, unit, _, spellID)
                 icon.text:SetText("")
                 
                 -- Initialize stacks
-                if JarsCoolDownDB.spells[i].stacks > 0 then
-                    currentStacks[i] = JarsCoolDownDB.spells[i].stacks
+                if profile.spells[i].stacks > 0 then
+                    currentStacks[i] = profile.spells[i].stacks
                 else
                     currentStacks[i] = 1
                 end
@@ -469,8 +530,8 @@ f:SetScript("OnEvent", function(self, event, unit, _, spellID)
                 
                 -- OnUpdate for countdown and stack display
                 icon:SetScript("OnUpdate", function(self)
-                    local maxStacks = JarsCoolDownDB.spells[i].stacks
-                    local spell = JarsCoolDownDB.spells[i]
+                    local maxStacks = profile.spells[i].stacks
+                    local spell = profile.spells[i]
                     
                     -- Update cooldowns and restore stacks
                     if chargeCooldowns[i] and #chargeCooldowns[i] > 0 then
@@ -541,12 +602,12 @@ f:SetScript("OnEvent", function(self, event, unit, _, spellID)
                 end)
                 
                 -- Set initial texture and visibility
-                local texture = C_Spell.GetSpellTexture(JarsCoolDownDB.spells[i].spellID)
+                local texture = C_Spell.GetSpellTexture(profile.spells[i].spellID)
                 if texture then
                     icon.texture:SetTexture(texture)
                 end
                 
-                if JarsCoolDownDB.spells[i].alwaysShow and JarsCoolDownDB.spells[i].spellID > 0 then
+                if profile.spells[i].alwaysShow and profile.spells[i].spellID > 0 then
                     icon:Show()
                 else
                     icon:Hide()
@@ -558,7 +619,7 @@ f:SetScript("OnEvent", function(self, event, unit, _, spellID)
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
         -- Check if this spell matches any configured spell
         for i = 1, 6 do
-            local spell = JarsCoolDownDB.spells[i]
+            local spell = profile.spells[i]
             local maxStacks = spell.stacks > 0 and spell.stacks or 1
             
             -- Check if it's a main spell cast
@@ -622,10 +683,11 @@ SLASH_JCD1 = "/jcd"
 SLASH_JCD2 = "/jarscooldown"
 SlashCmdList["JCD"] = function(msg)
     msg = msg:lower():trim()
+    local profile = GetCurrentProfile()
     
     if msg == "reset" then
         -- Force reset position
-        JarsCoolDownDB.position = nil
+        profile.position = nil
         if iconContainer then
             iconContainer:ClearAllPoints()
             iconContainer:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
@@ -651,3 +713,4 @@ SlashCmdList["JCD"] = function(msg)
         end
     end
 end
+
