@@ -7,7 +7,7 @@ This one is a little goofy, but kinda useful.
 <img width="799" height="488" alt="image" src="https://github.com/user-attachments/assets/dbfa59c2-77d8-4d81-9a34-419d9ed01efd" />
 
 Essentially, you list an ability you want to track the cooldown for. You set the "Default" cooldown for the ability. Ie, in this example Risking Sun Kick is set for the default value of 12 seconds. 
-If the ability cooldown is shortened by haste, then you check the haste box on the endof the row. 
+If the ability cooldown is shortened by haste, then you check the haste box on the endof the row. This calculation is made at time of casting the spell, so if you cast it while Bloodlust is already running, it impacts the cooldown time. 
 
 You can set a "reset ID" which is any ability that resets the cooldown early. 
 
