@@ -27,8 +27,14 @@ local function GetCurrentProfile()
             iconSize = 64,
             bgOpacity = 0.8,
             locked = true,
-            position = nil
+            position = nil,
+            onlyInCombat = false
         }
+    end
+    
+    -- Ensure onlyInCombat exists for existing profiles
+    if JarsCoolDownDB[specIndex].onlyInCombat == nil then
+        JarsCoolDownDB[specIndex].onlyInCombat = false
     end
     
     return JarsCoolDownDB[specIndex]
@@ -417,6 +423,26 @@ local function CreateConfigWindow()
             iconContainer.background:SetAlpha(value)
         end
     end)
+    
+    -- Only Show in Combat checkbox
+    local combatCheckLabel = configFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    combatCheckLabel:SetPoint("TOPLEFT", 20, -340)
+    combatCheckLabel:SetText("Only Show in Combat:")
+    
+    local combatCheck = CreateFrame("CheckButton", nil, configFrame, "UICheckButtonTemplate")
+    combatCheck:SetPoint("LEFT", combatCheckLabel, "RIGHT", 5, 0)
+    combatCheck:SetChecked(profile.onlyInCombat)
+    combatCheck:SetScript("OnClick", function(self)
+        profile.onlyInCombat = self:GetChecked()
+        -- Update icon visibility immediately
+        if iconContainer then
+            if profile.onlyInCombat and not UnitAffectingCombat("player") then
+                iconContainer:Hide()
+            else
+                iconContainer:Show()
+            end
+        end
+    end)
 end
 
 -- Create icons and handle events
@@ -532,6 +558,18 @@ f:SetScript("OnEvent", function(self, event, unit, _, spellID)
                 icon:SetScript("OnUpdate", function(self)
                     local maxStacks = profile.spells[i].stacks
                     local spell = profile.spells[i]
+                    
+                    -- Check if we should hide icons based on combat status
+                    if profile.onlyInCombat and not UnitAffectingCombat("player") then
+                        if iconContainer then
+                            iconContainer:Hide()
+                        end
+                        return
+                    else
+                        if iconContainer and not iconContainer:IsShown() then
+                            iconContainer:Show()
+                        end
+                    end
                     
                     -- Update cooldowns and restore stacks
                     if chargeCooldowns[i] and #chargeCooldowns[i] > 0 then
