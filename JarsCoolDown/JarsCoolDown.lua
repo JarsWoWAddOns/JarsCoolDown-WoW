@@ -4,6 +4,8 @@ local currentStacks = {}
 local chargeCooldowns = {}
 local iconContainer
 local currentSpec = 1
+local f -- Forward declaration for event frame
+local isInCombat = false -- Cached combat state
 
 -- Per-character, per-spec saved variables
 JarsCoolDownDB = JarsCoolDownDB or {}
@@ -48,26 +50,26 @@ local function ReloadIcons()
         for i = 1, 6 do
             if icons[i] then
                 icons[i]:Hide()
-                icons[i]:SetParent(nil)
+                icons[i]:SetScript("OnUpdate", nil)
             end
         end
-        iconContainer:SetParent(nil)
-        iconContainer = nil
     end
-    
+
     -- Reset state
     icons = {}
     currentStacks = {}
     chargeCooldowns = {}
-    
-    -- Trigger recreation on next frame
+    iconContainer = nil
+
+    -- Recreate config window for new spec
+    if configFrame then
+        configFrame:Hide()
+        configFrame = nil
+    end
+
+    -- Trigger recreation by firing the PLAYER_ENTERING_WORLD handler directly
     C_Timer.After(0.1, function()
-        local event = CreateFrame("Frame")
-        event:RegisterEvent("PLAYER_ENTERING_WORLD")
-        event:SetScript("OnEvent", function(self, e)
-            self:UnregisterEvent("PLAYER_ENTERING_WORLD")
-            -- Icons will be recreated by main event handler
-        end)
+        f:GetScript("OnEvent")(f, "PLAYER_ENTERING_WORLD")
     end)
 end
 
@@ -123,7 +125,6 @@ local function CreateConfigWindow()
         local index = i
         local yPos = -60 - ((i - 1) * 30)
         
-        inputBoxes[index] = {}
         inputBoxes[index] = {}
         
         -- Spell ID input
@@ -436,7 +437,7 @@ local function CreateConfigWindow()
         profile.onlyInCombat = self:GetChecked()
         -- Update icon visibility immediately
         if iconContainer then
-            if profile.onlyInCombat and not UnitAffectingCombat("player") then
+            if profile.onlyInCombat and not isInCombat then
                 iconContainer:Hide()
             else
                 iconContainer:Show()
@@ -446,13 +447,21 @@ local function CreateConfigWindow()
 end
 
 -- Create icons and handle events
-local f = CreateFrame("Frame")
+f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+f:RegisterEvent("PLAYER_REGEN_DISABLED")
+f:RegisterEvent("PLAYER_REGEN_ENABLED")
 f:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
 
 f:SetScript("OnEvent", function(self, event, unit, _, spellID)
-    if event == "PLAYER_SPECIALIZATION_CHANGED" then
+    if event == "PLAYER_REGEN_DISABLED" then
+        isInCombat = true
+        return
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        isInCombat = false
+        return
+    elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
         -- Spec changed, reload icons with new profile
         ReloadIcons()
         print("JarsCoolDown: Switched to " .. (select(2, GetSpecializationInfo(GetSpecialization() or 1))) .. " profile")
@@ -560,7 +569,7 @@ f:SetScript("OnEvent", function(self, event, unit, _, spellID)
                     local spell = profile.spells[i]
                     
                     -- Check if we should hide icons based on combat status
-                    if profile.onlyInCombat and not UnitAffectingCombat("player") then
+                    if profile.onlyInCombat and not isInCombat then
                         if iconContainer then
                             iconContainer:Hide()
                         end
